@@ -10,4 +10,5 @@ export type Contact = {
   status: ContactStatus;
   location: string;
   createdAt: string; // ISO date string
+  notes?: string;
 };

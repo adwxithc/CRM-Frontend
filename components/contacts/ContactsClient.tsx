@@ -31,9 +31,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { toast } from "sonner";
 
-import { DUMMY_CONTACTS } from "@/lib/data/contacts";
 import type { Contact, ContactStatus } from "@/lib/types";
+import type { ContactFormValues } from "@/lib/validations/contact";
+import { useContacts } from "@/hooks/useContacts";
+import { AddContactDialog } from "./AddContactDialog";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PAGE_SIZE = 10;
@@ -236,26 +239,36 @@ function PaginationControls({
 // ─── Main client component ────────────────────────────────────────────────────
 export function ContactsClient() {
   const router = useRouter();
+  const { contacts, addContact } = useContacts();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Filtered dataset
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return DUMMY_CONTACTS;
-    return DUMMY_CONTACTS.filter(
+    if (!q) return contacts;
+    return contacts.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
         c.company.toLowerCase().includes(q) ||
         c.status.toLowerCase().includes(q)
     );
-  }, [query]);
+  }, [query, contacts]);
 
   // Reset to page 1 when search changes
   const handleQuery = (value: string) => {
     setQuery(value);
     setPage(1);
+  };
+
+  const handleAdd = (values: ContactFormValues) => {
+    const created = addContact(values);
+    toast.success("Contact added", {
+      description: `${created.name} was added to your contacts.`,
+    });
+    return created;
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -266,17 +279,24 @@ export function ContactsClient() {
 
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Add Contact Dialog ─────────────────────────────────────── */}
+      <AddContactDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onAdd={handleAdd}
+      />
+
       {/* ── Page header ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Contacts</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {DUMMY_CONTACTS.length} total contacts
+            {contacts.length} total contacts
           </p>
         </div>
         <Button
           className="sm:ml-auto gap-2 w-full sm:w-auto"
-          onClick={() => router.push("/contacts/new")}
+          onClick={() => setDialogOpen(true)}
         >
           <Plus className="h-4 w-4" />
           Add Contact
