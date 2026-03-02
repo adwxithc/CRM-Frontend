@@ -1,9 +1,7 @@
 import {
   LayoutDashboard,
   Users,
-  Handshake,
-  BarChart3,
-  Settings,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,15 +21,9 @@ export const navGroups: NavGroup[] = [
   {
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Contacts", href: "/contacts", icon: Users, badge: 4 },
-      { label: "Deals", href: "/deals", icon: Handshake },
-      { label: "Reports", href: "/reports", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "Account",
-    items: [
-      { label: "Settings", href: "/settings", icon: Settings },
+      { label: "Contacts", href: "/contacts", icon: Users },
+      { label: "Activity Log", href: "/activity-logs", icon: Activity },
     ],
   },
 ];
+

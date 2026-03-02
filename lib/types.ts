@@ -28,3 +28,28 @@ export type ContactsResponse = {
   data: Contact[];
   pagination: Pagination;
 };
+
+// ─── Activity ─────────────────────────────────────────────────────────────────
+export type ActivityAction = "ADD" | "EDIT" | "DELETE";
+
+export type ActivityContact = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+export type Activity = {
+  id: string;
+  action: ActivityAction;
+  user: string;
+  contact: ActivityContact;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ActivitiesResponse = {
+  success: true;
+  data: Activity[];
+  pagination: Pagination;
+};
+
