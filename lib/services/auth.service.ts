@@ -19,7 +19,7 @@ export type AuthUser = {
 };
 
 export type AuthResponse = {
-  user: AuthUser;
+  data: AuthUser;
   message?: string;
 };
 

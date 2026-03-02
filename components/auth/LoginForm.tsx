@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -42,9 +42,16 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 // ─── Component ───────────────────────────────────────────────────────────────
 export function LoginForm() {
   const router = useRouter();
-  const { setUser } = useAuth();
+  const { setUser, isAuthenticated } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Navigate only after isAuthenticated is committed to state
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, router]);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -57,13 +64,13 @@ export function LoginForm() {
     setErrorMessage(null);
     try {
       const res = await authService.login(values);
-      setUser(res.user);
+      setUser(res.data);
       toast.success("Welcome back!", {
         description: res.user?.name
           ? `Signed in as ${res.user.name}`
           : "You have been signed in successfully.",
       });
-      router.push("/dashboard");
+
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : "Login failed. Please try again."
@@ -141,7 +148,7 @@ export function LoginForm() {
                         placeholder="••••••••"
                         type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
-                      disabled={isSubmitting}
+                        disabled={isSubmitting}
                         className="pr-10"
                         {...field}
                       />

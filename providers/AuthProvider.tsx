@@ -11,16 +11,15 @@ import {
 import { useRouter } from "next/navigation";
 import { authService, type AuthUser } from "@/lib/services/auth.service";
 
+const USER_KEY = "crm_user";
+
 // ─── Context shape ────────────────────────────────────────────────────────
 type AuthContextValue = {
-  /** Authenticated user, or null when unauthenticated. */
   user: AuthUser | null;
-  /** True once /me has resolved (success or failure). */
+  /** False once localStorage has been read on the client. */
   loading: boolean;
   isAuthenticated: boolean;
-  /** Call after a successful login / register to update state immediately. */
   setUser: (user: AuthUser | null) => void;
-  /** Calls /api/auth/logout, clears state, redirects to /login. */
   logout: () => Promise<void>;
 };
 
@@ -29,27 +28,28 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 // ─── Provider ─────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUserState] = useState<AuthUser | null>(null);
+  // Start as true so guards wait until localStorage is read
   const [loading, setLoading] = useState(true);
 
-  // On mount: verify the HTTP-only cookie by calling /me
   useEffect(() => {
-    let cancelled = false;
-    authService
-      .me()
-      .then((u) => {
-        if (!cancelled) setUser(u);
-      })
-      .catch(() => {
-        if (!cancelled) setUser(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      if (raw) setUserState(JSON.parse(raw) as AuthUser);
+    } catch {
+      localStorage.removeItem(USER_KEY);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-    return () => {
-      cancelled = true;
-    };
+  const setUser = useCallback((u: AuthUser | null) => {
+    if (u) {
+      localStorage.setItem(USER_KEY, JSON.stringify(u));
+    } else {
+      localStorage.removeItem(USER_KEY);
+    }
+    setUserState(u);
   }, []);
 
   const logout = useCallback(async () => {
@@ -58,7 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore — clear state regardless
     } finally {
-      setUser(null);
+      localStorage.removeItem(USER_KEY);
+      setUserState(null);
       router.push("/login");
     }
   }, [router]);
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser,
       logout,
     }),
-    [user, loading, logout]
+    [user, loading, setUser, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
