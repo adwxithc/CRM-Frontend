@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
 import {
   Search,
   Plus,
@@ -10,11 +9,23 @@ import {
   MoreHorizontal,
   Mail,
   Phone,
+  Loader2,
+  AlertCircle,
+  Trash2,
 } from "lucide-react";
 
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -33,37 +44,34 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
 
-import type { Contact, ContactStatus } from "@/lib/types";
+import type { Contact, ContactStatus, Pagination } from "@/lib/types";
 import type { ContactFormValues } from "@/lib/validations/contact";
-import { useContacts } from "@/hooks/useContacts";
+import { contactService } from "@/lib/services/contact.service";
 import { AddContactDialog } from "./AddContactDialog";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const PAGE_SIZE = 10;
+const PAGE_LIMIT = 10;
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
-const STATUS_STYLES: Record<
-  ContactStatus,
-  { label: string; className: string }
-> = {
-  Customer: {
-    label: "Customer",
-    className:
-      "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20",
-  },
-  Prospect: {
-    label: "Prospect",
-    className:
-      "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20",
-  },
-  Lead: {
-    label: "Lead",
-    className:
-      "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20",
-  },
-};
+const STATUS_STYLES: Record<ContactStatus, { label: string; className: string }> =
+  {
+    Customer: {
+      label: "Customer",
+      className:
+        "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20",
+    },
+    Prospect: {
+      label: "Prospect",
+      className:
+        "bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20",
+    },
+    Lead: {
+      label: "Lead",
+      className:
+        "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20",
+    },
+  };
 
-function StatusBadge({ status }: { status: ContactStatus }) {
+function StatusBadge({ status }: Readonly<{ status: ContactStatus }>) {
   const s = STATUS_STYLES[status];
   return (
     <Badge
@@ -86,7 +94,17 @@ function getInitials(name: string) {
 }
 
 // ─── Row actions ─────────────────────────────────────────────────────────────
-function RowActions({ contact }: { contact: Contact }) {
+function RowActions({
+  contact,
+  isDeleting,
+  onEdit,
+  onRequestDelete,
+}: Readonly<{
+  contact: Contact;
+  isDeleting: boolean;
+  onEdit: (contact: Contact) => void;
+  onRequestDelete: (contact: Contact) => void;
+}>) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -95,15 +113,25 @@ function RowActions({ contact }: { contact: Contact }) {
           size="icon"
           className="h-8 w-8 text-muted-foreground hover:text-foreground"
           aria-label={`Actions for ${contact.name}`}
+          disabled={isDeleting}
         >
-          <MoreHorizontal className="h-4 w-4" />
+          {isDeleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <MoreHorizontal className="h-4 w-4" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem>View profile</DropdownMenuItem>
-        <DropdownMenuItem>Edit contact</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onEdit(contact)}>
+          Edit contact
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive focus:text-destructive">
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onClick={() => onRequestDelete(contact)}
+        >
+          <Trash2 className="mr-2 h-3.5 w-3.5" />
           Delete
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -111,23 +139,81 @@ function RowActions({ contact }: { contact: Contact }) {
   );
 }
 
+// ─── Delete confirmation dialog ───────────────────────────────────────────────
+function DeleteConfirmDialog({
+  contact,
+  isDeleting,
+  onConfirm,
+  onCancel,
+}: Readonly<{
+  contact: Contact | null;
+  isDeleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}>) {
+  return (
+    <AlertDialog open={!!contact}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete contact?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently remove{" "}
+            <span className="font-medium text-foreground">
+              {contact?.name}
+            </span>{" "}
+            from your contacts. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onCancel} disabled={isDeleting}>
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Deleting…
+              </>
+            ) : (
+              "Delete"
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // ─── Empty state ─────────────────────────────────────────────────────────────
-function EmptyState({ query }: { query: string }) {
+function EmptyState() {
   return (
     <TableRow>
       <TableCell colSpan={6} className="py-20 text-center">
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
           <Search className="h-8 w-8 opacity-30" />
-          <p className="text-sm font-medium">
-            {query
-              ? `No contacts found for "${query}"`
-              : "No contacts yet"}
-          </p>
-          {query && (
-            <p className="text-xs">
-              Try a different name, email or company.
-            </p>
-          )}
+          <p className="text-sm font-medium">No contacts yet</p>
+          <p className="text-xs">Add your first contact to get started.</p>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ─── Error state ──────────────────────────────────────────────────────────────
+function ErrorState({ message, onRetry }: Readonly<{ message: string; onRetry: () => void }>) {
+  return (
+    <TableRow>
+      <TableCell colSpan={6} className="py-20 text-center">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <AlertCircle className="h-8 w-8 text-destructive opacity-70" />
+          <p className="text-sm font-medium text-destructive">{message}</p>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Try again
+          </Button>
         </div>
       </TableCell>
     </TableRow>
@@ -136,33 +222,28 @@ function EmptyState({ query }: { query: string }) {
 
 // ─── Pagination controls ──────────────────────────────────────────────────────
 function PaginationControls({
-  page,
-  totalPages,
-  from,
-  to,
-  total,
+  pagination,
   onPrev,
   onNext,
   onPage,
-}: {
-  page: number;
-  totalPages: number;
-  from: number;
-  to: number;
-  total: number;
+}: Readonly<{
+  pagination: Pagination;
   onPrev: () => void;
   onNext: () => void;
   onPage: (p: number) => void;
-}) {
+}>) {
+  const { page, totalPages, total, limit } = pagination;
   if (totalPages <= 1) return null;
 
-  // build visible page numbers with ellipsis
-  const pages: (number | "…")[] = [];
+  const from = (page - 1) * limit + 1;
+  const to = Math.min(page * limit, total);
+
+  const pages: (number | "\u2026")[] = [];
   if (totalPages <= 7) {
     for (let i = 1; i <= totalPages; i++) pages.push(i);
   } else {
     pages.push(1);
-    if (page > 3) pages.push("…");
+    if (page > 3) pages.push("\u2026");
     for (
       let i = Math.max(2, page - 1);
       i <= Math.min(totalPages - 1, page + 1);
@@ -170,7 +251,7 @@ function PaginationControls({
     ) {
       pages.push(i);
     }
-    if (page < totalPages - 2) pages.push("…");
+    if (page < totalPages - 2) pages.push("\u2026");
     pages.push(totalPages);
   }
 
@@ -179,11 +260,10 @@ function PaginationControls({
       <p className="text-xs text-muted-foreground">
         Showing{" "}
         <span className="font-medium text-foreground">
-          {from}–{to}
+          {from}\u2013{to}
         </span>{" "}
         of{" "}
-        <span className="font-medium text-foreground">{total}</span>{" "}
-        contacts
+        <span className="font-medium text-foreground">{total}</span> contacts
       </p>
 
       <div className="flex items-center gap-1">
@@ -192,19 +272,19 @@ function PaginationControls({
           size="icon"
           className="h-8 w-8"
           onClick={onPrev}
-          disabled={page === 1}
+          disabled={!pagination.hasPrevPage}
           aria-label="Previous page"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
 
         {pages.map((p, i) =>
-          p === "…" ? (
+          p === "\u2026" ? (
             <span
-              key={`ellipsis-${i}`}
+              key={`ellipsis-before-${pages[i + 1] ?? "end"}`}
               className="px-1 text-muted-foreground text-sm select-none"
             >
-              …
+              \u2026
             </span>
           ) : (
             <Button
@@ -212,7 +292,7 @@ function PaginationControls({
               variant={p === page ? "default" : "ghost"}
               size="icon"
               className="h-8 w-8 text-xs"
-              onClick={() => onPage(p as number)}
+              onClick={() => onPage(p)}
               aria-label={`Go to page ${p}`}
               aria-current={p === page ? "page" : undefined}
             >
@@ -226,7 +306,7 @@ function PaginationControls({
           size="icon"
           className="h-8 w-8"
           onClick={onNext}
-          disabled={page === totalPages}
+          disabled={!pagination.hasNextPage}
           aria-label="Next page"
         >
           <ChevronRight className="h-4 w-4" />
@@ -238,52 +318,124 @@ function PaginationControls({
 
 // ─── Main client component ────────────────────────────────────────────────────
 export function ContactsClient() {
-  const router = useRouter();
-  const { contacts, addContact } = useContacts();
-  const [query, setQuery] = useState("");
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Filtered dataset
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) return contacts;
-    return contacts.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        c.company.toLowerCase().includes(q) ||
-        c.status.toLowerCase().includes(q)
-    );
-  }, [query, contacts]);
+  // Dialog state
+  const [addOpen, setAddOpen] = useState(false);
+  const [editContact, setEditContact] = useState<Contact | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Reset to page 1 when search changes
-  const handleQuery = (value: string) => {
-    setQuery(value);
-    setPage(1);
-  };
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  const fetchContacts = useCallback(async (p: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await contactService.getContacts(p, PAGE_LIMIT);
+      setContacts(result.data);
+      setPagination(result.pagination);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load contacts."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const handleAdd = (values: ContactFormValues) => {
-    const created = addContact(values);
+  useEffect(() => {
+    fetchContacts(page);
+  }, [page, fetchContacts]);
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  const handleAdd = async (values: ContactFormValues) => {
+    const created = await contactService.createContact(values);
     toast.success("Contact added", {
       description: `${created.name} was added to your contacts.`,
     });
-    return created;
+    // Go to page 1 or refresh current page
+    if (page === 1) {
+      fetchContacts(1);
+    } else {
+      setPage(1);
+    }
   };
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const from = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
-  const to = Math.min(safePage * PAGE_SIZE, filtered.length);
-  const pageRows = filtered.slice(from - 1, to);
+  const handleEdit = async (values: ContactFormValues) => {
+    if (!editContact) return;
+    const updated = await contactService.updateContact(editContact.id, values);
+    toast.success("Contact updated", {
+      description: `${updated.name} was updated successfully.`,
+    });
+    setEditContact(null);
+    fetchContacts(page);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeletingId(deleteTarget.id);
+    try {
+      await contactService.deleteContact(deleteTarget.id);
+      toast.success("Contact deleted", {
+        description: `${deleteTarget.name} was removed.`,
+      });
+      setDeleteTarget(null);
+      const newPage = contacts.length === 1 && page > 1 ? page - 1 : page;
+      if (newPage === page) {
+        fetchContacts(page);
+      } else {
+        setPage(newPage);
+      }
+    } catch (err) {
+      toast.error("Delete failed", {
+        description:
+          err instanceof Error ? err.message : "Could not delete contact.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5">
+      {/* ── Delete confirmation ────────────────────────────────────── */}
+      <DeleteConfirmDialog
+        contact={deleteTarget}
+        isDeleting={!!deletingId}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
       {/* ── Add Contact Dialog ─────────────────────────────────────── */}
       <AddContactDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onAdd={handleAdd}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSubmit={handleAdd}
+      />
+
+      {/* ── Edit Contact Dialog ────────────────────────────────────── */}
+      <AddContactDialog
+        open={!!editContact}
+        onOpenChange={(open) => !open && setEditContact(null)}
+        onSubmit={handleEdit}
+        defaultValues={
+          editContact
+            ? {
+                name: editContact.name,
+                email: editContact.email,
+                phone: editContact.phone,
+                company: editContact.company,
+                status: editContact.status,
+                notes: editContact.notes ?? "",
+              }
+            : undefined
+        }
+        title="Edit contact"
+        submitLabel="Save changes"
       />
 
       {/* ── Page header ─────────────────────────────────────────────── */}
@@ -291,12 +443,12 @@ export function ContactsClient() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Contacts</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {contacts.length} total contacts
+            {pagination ? `${pagination.total} total contacts` : "Loading…"}
           </p>
         </div>
         <Button
           className="sm:ml-auto gap-2 w-full sm:w-auto"
-          onClick={() => setDialogOpen(true)}
+          onClick={() => setAddOpen(true)}
         >
           <Plus className="h-4 w-4" />
           Add Contact
@@ -305,51 +457,41 @@ export function ContactsClient() {
 
       {/* ── Table card ──────────────────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              placeholder="Search by name, email or company…"
-              value={query}
-              onChange={(e) => handleQuery(e.target.value)}
-              className="h-9 pl-8 bg-muted/40 border-0 focus-visible:ring-1"
-            />
-          </div>
-          {query && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground text-xs h-9"
-              onClick={() => handleQuery("")}
-            >
-              Clear
-            </Button>
-          )}
-        </div>
-
         {/* Table */}
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent border-border">
-                <TableHead className="w-[220px] pl-4">Contact</TableHead>
+                <TableHead className="w-55 pl-4">Contact</TableHead>
                 <TableHead className="hidden md:table-cell">Company</TableHead>
                 <TableHead className="hidden lg:table-cell">Phone</TableHead>
-                <TableHead className="hidden sm:table-cell">Location</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right pr-4">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pageRows.length === 0 ? (
-                <EmptyState query={query} />
-              ) : (
-                pageRows.map((contact) => (
+              {(() => {
+                if (loading) {
+                  return (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-20 text-center">
+                        <div className="flex justify-center">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                }
+                if (error) {
+                  return <ErrorState message={error} onRetry={() => fetchContacts(page)} />;
+                }
+                if (contacts.length === 0) {
+                  return <EmptyState />;
+                }
+                return contacts.map((contact) => (
                   <TableRow
                     key={contact.id}
-                    className="border-border hover:bg-muted/30 cursor-pointer"
-                    onClick={() => router.push(`/contacts/${contact.id}`)}
+                    className="border-border hover:bg-muted/30"
                   >
                     {/* Contact name + email */}
                     <TableCell className="pl-4 py-3">
@@ -365,7 +507,6 @@ export function ContactsClient() {
                           </p>
                           <a
                             href={`mailto:${contact.email}`}
-                            onClick={(e) => e.stopPropagation()}
                             className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-primary transition-colors"
                           >
                             <Mail className="h-3 w-3 shrink-0" />
@@ -384,17 +525,11 @@ export function ContactsClient() {
                     <TableCell className="hidden lg:table-cell">
                       <a
                         href={`tel:${contact.phone}`}
-                        onClick={(e) => e.stopPropagation()}
                         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
                       >
                         <Phone className="h-3 w-3 shrink-0" />
                         {contact.phone}
                       </a>
-                    </TableCell>
-
-                    {/* Location */}
-                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                      {contact.location}
                     </TableCell>
 
                     {/* Status */}
@@ -407,27 +542,31 @@ export function ContactsClient() {
                       className="text-right pr-4"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <RowActions contact={contact} />
+                      <RowActions
+                        contact={contact}
+                        isDeleting={deletingId === contact.id}
+                        onEdit={setEditContact}
+                        onRequestDelete={setDeleteTarget}
+                      />
                     </TableCell>
                   </TableRow>
-                ))
-              )}
+                ));
+              })()}
             </TableBody>
           </Table>
         </div>
 
         {/* Pagination */}
-        <PaginationControls
-          page={safePage}
-          totalPages={totalPages}
-          from={from}
-          to={to}
-          total={filtered.length}
-          onPrev={() => setPage((p) => Math.max(1, p - 1))}
-          onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
-          onPage={setPage}
-        />
+        {pagination && (
+          <PaginationControls
+            pagination={pagination}
+            onPrev={() => setPage((p) => p - 1)}
+            onNext={() => setPage((p) => p + 1)}
+            onPage={setPage}
+          />
+        )}
       </div>
     </div>
   );
 }
+

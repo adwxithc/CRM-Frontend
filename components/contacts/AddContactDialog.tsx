@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -33,22 +33,28 @@ import {
 } from "@/components/ui/select";
 
 import { contactSchema, type ContactFormValues } from "@/lib/validations/contact";
-import type { Contact } from "@/lib/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type AddContactDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Called after validation passes — parent is responsible for state update and toast */
-  onAdd: (values: ContactFormValues) => Contact;
+  /** Called after validation passes — must return a promise */
+  onSubmit: (values: ContactFormValues) => Promise<void>;
+  /** Pre-populate fields for edit mode */
+  defaultValues?: Partial<ContactFormValues>;
+  title?: string;
+  submitLabel?: string;
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 export function AddContactDialog({
   open,
   onOpenChange,
-  onAdd,
-}: AddContactDialogProps) {
+  onSubmit,
+  defaultValues,
+  title = "Add new contact",
+  submitLabel = "Save contact",
+}: Readonly<AddContactDialogProps>) {
   const form = useForm<ContactFormValues>({
     resolver: zodResolver(contactSchema),
     defaultValues: {
@@ -58,19 +64,39 @@ export function AddContactDialog({
       company: "",
       status: "Lead",
       notes: "",
+      ...defaultValues,
     },
   });
 
   const { isSubmitting } = form.formState;
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  // Reset form each time the dialog opens
+  // Reset (and re-populate) each time the dialog opens
   useEffect(() => {
-    if (open) form.reset();
-  }, [open, form]);
+    if (open) {
+      setApiError(null);
+      form.reset({
+        name: "",
+        email: "",
+        phone: "",
+        company: "",
+        status: "Lead",
+        notes: "",
+        ...defaultValues,
+      });
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function onSubmit(values: ContactFormValues) {
-    onAdd(values);
-    onOpenChange(false);
+  async function handleSubmit(values: ContactFormValues) {
+    setApiError(null);
+    try {
+      await onSubmit(values);
+      onOpenChange(false);
+    } catch (err) {
+      setApiError(
+        err instanceof Error ? err.message : "Something went wrong. Please try again."
+      );
+    }
   }
 
   return (
@@ -79,7 +105,7 @@ export function AddContactDialog({
         {/* ── Header ──────────────────────────────────────────────────── */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle className="text-lg font-semibold">
-            Add new contact
+            {title}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground mt-0.5">
             Fill in the details below. Fields marked with{" "}
@@ -89,8 +115,15 @@ export function AddContactDialog({
 
         {/* ── Form ────────────────────────────────────────────────────── */}
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)}>
+          <form onSubmit={form.handleSubmit(handleSubmit)}>
             <div className="px-6 py-5 flex flex-col gap-4 max-h-[65vh] overflow-y-auto">
+              {/* API error banner */}
+              {apiError && (
+                <div className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{apiError}</span>
+                </div>
+              )}
               {/* Row: Name + Company */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField
@@ -220,7 +253,7 @@ export function AddContactDialog({
                     <FormControl>
                       <Textarea
                         placeholder="Add any relevant notes about this contact…"
-                        className="resize-none min-h-[90px]"
+                        className="resize-none min-h-22.5"
                         disabled={isSubmitting}
                         {...field}
                       />
@@ -248,7 +281,7 @@ export function AddContactDialog({
                     Saving…
                   </>
                 ) : (
-                  "Save contact"
+                  submitLabel
                 )}
               </Button>
             </DialogFooter>

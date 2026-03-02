@@ -66,8 +66,8 @@ export function LoginForm() {
       const res = await authService.login(values);
       setUser(res.data);
       toast.success("Welcome back!", {
-        description: res.user?.name
-          ? `Signed in as ${res.user.name}`
+        description: res.data?.name
+          ? `Signed in as ${res.data.name}`
           : "You have been signed in successfully.",
       });
 
