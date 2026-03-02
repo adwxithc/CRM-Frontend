@@ -5,7 +5,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +27,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { authService } from "@/lib/services/auth.service";
+import { AuthErrorAlert } from "./AuthErrorAlert";
 
 // ─── Zod Schema ─────────────────────────────────────────────────────────────
 const registerSchema = z
@@ -50,9 +54,10 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export function RegisterForm() {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -64,11 +69,27 @@ export function RegisterForm() {
     },
   });
 
-  function onSubmit(values: RegisterFormValues) {
-    setIsLoading(true);
-    // TODO: replace with real auth call
-    console.log("Register payload:", values);
-    setTimeout(() => setIsLoading(false), 1500);
+  const { isSubmitting } = form.formState;
+
+  async function onSubmit(values: RegisterFormValues) {
+    setErrorMessage(null);
+    try {
+      await authService.register({
+        name: values.fullName,
+        email: values.email,
+        password: values.password,
+      });
+      toast.success("Account created!", {
+        description: "Please sign in with your new credentials.",
+      });
+      router.push("/login");
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error
+          ? err.message
+          : "Registration failed. Please try again."
+      );
+    }
   }
 
   return (
@@ -93,6 +114,14 @@ export function RegisterForm() {
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* Error banner */}
+            {errorMessage && (
+              <AuthErrorAlert
+                message={errorMessage}
+                onDismiss={() => setErrorMessage(null)}
+              />
+            )}
+
             {/* Full Name */}
             <FormField
               control={form.control}
@@ -105,7 +134,7 @@ export function RegisterForm() {
                       placeholder="John Doe"
                       type="text"
                       autoComplete="name"
-                      disabled={isLoading}
+                      disabled={isSubmitting}
                       {...field}
                     />
                   </FormControl>
@@ -126,7 +155,7 @@ export function RegisterForm() {
                       placeholder="name@company.com"
                       type="email"
                       autoComplete="email"
-                      disabled={isLoading}
+                      disabled={isSubmitting}
                       {...field}
                     />
                   </FormControl>
@@ -148,7 +177,7 @@ export function RegisterForm() {
                         placeholder="••••••••"
                         type={showPassword ? "text" : "password"}
                         autoComplete="new-password"
-                        disabled={isLoading}
+                        disabled={isSubmitting}
                         className="pr-10"
                         {...field}
                       />
@@ -186,7 +215,7 @@ export function RegisterForm() {
                         placeholder="••••••••"
                         type={showConfirm ? "text" : "password"}
                         autoComplete="new-password"
-                        disabled={isLoading}
+                        disabled={isSubmitting}
                         className="pr-10"
                         {...field}
                       />
@@ -212,8 +241,8 @@ export function RegisterForm() {
             />
 
             {/* Submit */}
-            <Button type="submit" className="w-full mt-2" disabled={isLoading}>
-              {isLoading ? (
+            <Button type="submit" className="w-full mt-2" disabled={isSubmitting}>
+              {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating account…

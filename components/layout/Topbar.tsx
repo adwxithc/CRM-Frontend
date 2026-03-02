@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/providers/AuthProvider";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type TopbarProps = {
@@ -36,16 +37,18 @@ function usePageTitle() {
   return PAGE_TITLES[segment] ?? "CRM Platform";
 }
 
-// ─── Mock user ────────────────────────────────────────────────────────────────
-const MOCK_USER = {
-  name: "Alex Johnson",
-  email: "alex@company.com",
-  avatarUrl: "",
-  initials: "AJ",
-};
-
 // ─── UserMenu ─────────────────────────────────────────────────────────────────
 function UserMenu() {
+  const { user, logout } = useAuth();
+  const name = user?.name ?? "User";
+  const email = user?.email ?? "";
+  const initials = name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -54,9 +57,9 @@ function UserMenu() {
           aria-label="Open user menu"
         >
           <Avatar className="h-8 w-8">
-            <AvatarImage src={MOCK_USER.avatarUrl} alt={MOCK_USER.name} />
+            <AvatarImage src="" alt={name} />
             <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-              {MOCK_USER.initials}
+              {initials}
             </AvatarFallback>
           </Avatar>
         </button>
@@ -66,11 +69,9 @@ function UserMenu() {
         {/* User info */}
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col gap-0.5">
-            <p className="text-sm font-semibold leading-none">
-              {MOCK_USER.name}
-            </p>
+            <p className="text-sm font-semibold leading-none">{name}</p>
             <p className="text-xs text-muted-foreground leading-none mt-1">
-              {MOCK_USER.email}
+              {email}
             </p>
           </div>
         </DropdownMenuLabel>
@@ -91,7 +92,10 @@ function UserMenu() {
 
         <DropdownMenuSeparator />
 
-        <DropdownMenuItem className="text-destructive focus:text-destructive">
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive cursor-pointer"
+          onClick={logout}
+        >
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

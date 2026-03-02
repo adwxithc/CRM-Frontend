@@ -5,7 +5,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +27,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { authService } from "@/lib/services/auth.service";
+import { AuthErrorAlert } from "./AuthErrorAlert";
+import { useAuth } from "@/providers/AuthProvider";
 
 // ─── Zod Schema ─────────────────────────────────────────────────────────────
 const loginSchema = z.object({
@@ -36,22 +41,34 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export function LoginForm() {
+  const router = useRouter();
+  const { setUser } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+    defaultValues: { email: "", password: "" },
   });
 
-  function onSubmit(values: LoginFormValues) {
-    setIsLoading(true);
-    // TODO: replace with real auth call
-    console.log("Login payload:", values);
-    setTimeout(() => setIsLoading(false), 1500);
+  const { isSubmitting } = form.formState;
+
+  async function onSubmit(values: LoginFormValues) {
+    setErrorMessage(null);
+    try {
+      const res = await authService.login(values);
+      setUser(res.user);
+      toast.success("Welcome back!", {
+        description: res.user?.name
+          ? `Signed in as ${res.user.name}`
+          : "You have been signed in successfully.",
+      });
+      router.push("/dashboard");
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : "Login failed. Please try again."
+      );
+    }
   }
 
   return (
@@ -74,6 +91,14 @@ export function LoginForm() {
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* Error banner */}
+            {errorMessage && (
+              <AuthErrorAlert
+                message={errorMessage}
+                onDismiss={() => setErrorMessage(null)}
+              />
+            )}
+
             {/* Email */}
             <FormField
               control={form.control}
@@ -86,7 +111,7 @@ export function LoginForm() {
                       placeholder="name@company.com"
                       type="email"
                       autoComplete="email"
-                      disabled={isLoading}
+                      disabled={isSubmitting}
                       {...field}
                     />
                   </FormControl>
@@ -116,7 +141,7 @@ export function LoginForm() {
                         placeholder="••••••••"
                         type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
-                        disabled={isLoading}
+                      disabled={isSubmitting}
                         className="pr-10"
                         {...field}
                       />
@@ -142,8 +167,8 @@ export function LoginForm() {
             />
 
             {/* Submit */}
-            <Button type="submit" className="w-full mt-2" disabled={isLoading}>
-              {isLoading ? (
+            <Button type="submit" className="w-full mt-2" disabled={isSubmitting}>
+              {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Signing in…
